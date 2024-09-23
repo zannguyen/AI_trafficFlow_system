@@ -1,0 +1,161 @@
+import cv2
+import numpy as np
+
+# Load YOLO model
+def load_yolo_model():
+    cfg_file = 'yolov3.cfg'
+    weights_file = 'yolov3.weights'
+    names_file = 'coco.names'
+
+    # Load YOLOv3 model configuration and weight files
+    net = cv2.dnn.readNet(weights_file, cfg_file)
+    layer_names = net.getLayerNames()
+    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+
+    with open(names_file, 'r') as f:
+        classes = [line.strip() for line in f.readlines()]
+
+    return net, output_layers, classes
+
+# Object detection function
+def detect_objects(frame, net, output_layers, classes):
+    height, width, channels = frame.shape
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outs = net.forward(output_layers)
+
+    class_ids = []
+    confidences = []
+    boxes = []
+
+    for out in outs:
+        for detection in out:
+            if isinstance(detection, (list, tuple, np.ndarray)) and len(detection) >= 6:
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+                if confidence > 0.5:
+                    center_x = int(detection[0] * width)
+                    center_y = int(detection[1] * height)
+                    w = int(detection[2] * width)
+                    h = int(detection[3] * height)
+
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+
+                    boxes.append([x, y, w, h])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+    detected_objects = []
+    if len(indices) > 0:
+        for i in indices.flatten():
+            detected_objects.append((boxes[i], class_ids[i]))
+
+    return detected_objects
+
+# Traffic light color detection function
+def detect_traffic_light_color(frame):
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+    # Define HSV color ranges for red, yellow, and green
+    red_lower1 = np.array([0, 100, 100])
+    red_upper1 = np.array([10, 255, 255])
+    red_lower2 = np.array([160, 100, 100])
+    red_upper2 = np.array([180, 255, 255])
+    
+    yellow_lower = np.array([20, 100, 100])
+    yellow_upper = np.array([30, 255, 255])
+
+    green_lower = np.array([40, 100, 100])
+    green_upper = np.array([90, 255, 255])
+
+    # Create masks for the colors
+    red_mask1 = cv2.inRange(hsv, red_lower1, red_upper1)
+    red_mask2 = cv2.inRange(hsv, red_lower2, red_upper2)
+    red_mask = red_mask1 + red_mask2
+
+    yellow_mask = cv2.inRange(hsv, yellow_lower, yellow_upper)
+    green_mask = cv2.inRange(hsv, green_lower, green_upper)
+
+    # Find the largest color area (contour) for each color mask
+    red_area = np.sum(red_mask)
+    yellow_area = np.sum(yellow_mask)
+    green_area = np.sum(green_mask)
+
+    # Determine the traffic light color based on the largest area
+    if red_area > yellow_area and red_area > green_area:
+        return 'red'
+    elif yellow_area > red_area and yellow_area > green_area:
+        return 'yellow'
+    elif green_area > red_area and green_area > yellow_area:
+        return 'green'
+    else:
+        return 'unknown'
+
+# Traffic light control function
+def control_traffic_light(detected_objects, traffic_light_color, classes):
+    # Class IDs of vehicle objects (e.g., car, bus, motorcycle)
+    vehicle_class_ids = [2, 5, 3]  # Class IDs for car, bus, motorcycle
+    vehicles = [obj for obj in detected_objects if obj[1] in vehicle_class_ids]
+
+    # Assume crosswalk is a certain class, e.g., class ID 11 (for example purposes, adjust based on actual data)
+    crosswalk_class_id = 11  # You need to replace this with the actual class ID for a crosswalk if available
+
+    # Check if crosswalk is detected
+    for obj in detected_objects:
+        if obj[1] == crosswalk_class_id:
+            print("Detected crosswalk")
+            break
+
+    if traffic_light_color == 'red':
+        print("Red light detected. Stop traffic.")
+    elif traffic_light_color == 'green':
+        if len(vehicles) <= 6:
+            print("Green pedestrian light. Allow crossing.")
+        else:
+            print("Heavy traffic detected, continue traffic flow.")
+    elif traffic_light_color == 'yellow':
+        print("Yellow light detected. Prepare to stop.")
+
+# Open video file
+cap = cv2.VideoCapture('traffic_video.mp4')
+
+# Load YOLO model
+net, output_layers, classes = load_yolo_model()
+
+# Initialize previous traffic light color
+previous_traffic_light_color = None
+
+# Continuously read frames from the video
+while True:
+    ret, frame = cap.read()  # Read a frame from the video
+
+    # Break the loop if no frame is captured (end of video)
+    if not ret:
+        break
+
+    # Detect traffic light color
+    traffic_light_color = detect_traffic_light_color(frame)
+
+    # Check if traffic light color has changed
+    if traffic_light_color != previous_traffic_light_color:
+        print(f"Traffic light color changed to: {traffic_light_color}")
+        previous_traffic_light_color = traffic_light_color  # Update the last detected color
+
+    # Object detection
+    detected_objects = detect_objects(frame, net, output_layers, classes)
+
+    # Print class ID and name of detected objects
+    for obj in detected_objects:
+        class_id = obj[1]
+        class_name = classes[class_id]
+        print(f"Detected object class: {class_id} ({class_name})")
+
+    # Call the traffic light control function
+    control_traffic_light(detected_objects, traffic_light_color, classes)
+
+# Release video capture object and close windows
+cap.release()
+cv2.destroyAllWindows()
