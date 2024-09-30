@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교통 데이터 시각화</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f7f7f7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            float: left;
+            width: 45%;
+        }
+        .chart-container {
+            float: right;
+            width: 50%;
+        }
+        video {
+            width: 100%;
+            border-radius: 10px;
+        }
+        canvas {
+            width: 100%;
+            height: 400px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>교통 데이터 시각화</h1>
+        <div class="video-container">
+            <video id="trafficVideo" controls autoplay>
+                <source src="{{ url_for('static', filename='/traffic_video.mp4') }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+        <div class="chart-container">
+            <canvas id="trafficChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let trafficChart;
+
+        async function fetchData() {
+            // try {
+            //     const response = await fetch('/data');
+            //     if (!response.ok) {
+            //         throw new Error('Network response was not ok: ' + response.statusText);
+            //     }
+            //     const data = await response.json();
+            //     console.log(data);  // Log the fetched data to console for debugging
+
+            //     // 데이터가 비어 있으면 경고 메시지를 출력하고 빈 배열을 반환
+            //     if (!Array.isArray(data) || data.length === 0) {
+            //         console.warn('Fetched data is empty or not an array.');
+            //         return [];
+            //     }
+
+            //     return data;
+
+
+            // } catch (error) {
+            //     console.error('Fetch error: ', error);
+            //     return [];  // Return an empty array on error to prevent further issues
+            // }
+
+
+            const response = await fetch('/data');
+            const data = await response.json();
+            console.log("Fetched data: ", data);
+            return data;
+        }
+
+        async function createChart() {
+            const data = await fetchData();
+            
+            // Prepare data for chart
+            const labels = data.map((_, index) => index + 1);  // Frames as labels
+            const carCounts = data.map(item => item.detected_objects.filter(obj => obj === 'car').length);
+            const busCounts = data.map(item => item.detected_objects.filter(obj => obj === 'bus').length);
+            const personCounts = data.map(item => item.detected_objects.filter(obj => obj === 'person').length);
+
+            // Check if the data arrays are valid
+            if (carCounts.length === 0 && busCounts.length === 0 && personCounts.length === 0) {
+                console.warn('No valid data available for charting.');
+                return;  // Early exit if no data to display
+            }
+
+            // If the chart already exists, destroy it before creating a new one
+            if (trafficChart) {
+                trafficChart.destroy();
+            }
+
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+            trafficChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Car Count',
+                            data: carCounts,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Bus Count',
+                            data: busCounts,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Person Count',
+                            data: personCounts,
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Objects Detected'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Frame'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Call the createChart function to initiate the chart creation
+        createChart();
+
+    </script>
+
+</body>
+</html>
+
+
