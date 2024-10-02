@@ -5,15 +5,15 @@ from ultralytics import YOLO
 
 app = Flask(__name__)
 
-# Global variable to store traffic data
+# 글로벌변수 선언
 traffic_data = []
 
-# Load YOLO model
+# YOLO모델 불러오기
 def load_yolo_model():
-    model = YOLO('yolov8n.pt')  # Use the appropriate YOLO model
+    model = YOLO('yolov8n.pt')  
     return model
 
-# Process video to detect objects and traffic light colors
+# detected object하고 traffic light 과정
 def process_video(video_path):
     cap = cv2.VideoCapture(video_path)
     model = load_yolo_model()
@@ -23,11 +23,10 @@ def process_video(video_path):
         if not ret:
             break
 
-        # Detect traffic light color and objects (replace with actual detection logic)
         traffic_light_color = detect_traffic_light_color(frame)
         detected_objects = detect_objects(frame, model)
 
-        # Append to traffic_data (you can adjust this data structure)
+        # traffic data 추가하기
         traffic_data.append({
             'traffic_light_color': traffic_light_color,
             'detected_objects': [obj[1] for obj in detected_objects]
@@ -35,23 +34,23 @@ def process_video(video_path):
 
     cap.release()
 
-# Mock detection functions (replace with actual detection logic)
 def detect_traffic_light_color(frame):
-    return 'red'  # Simplified for example
+    return 'red' 
 
 def detect_objects(frame, model):
-    return [('car', 'car'), ('bus', 'bus'), ('person', 'person')]  # Simplified for example
+    return [('car', 'car'), ('bus', 'bus'), ('person', 'person')]
+
+@app.route('/data')
+def data():
+    print(traffic_data)  # 서버에서 전송되는 데이터를 확인
+    return jsonify(traffic_data)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/data')
-def data():
-    return jsonify(traffic_data)
-
 if __name__ == '__main__':
-    video_file = 'static/traffic_video.mp4'  # Ensure video is in the static folder
-    process_video(video_file)  # Pre-process video (for testing)
+    video_file = 'static/traffic_video.mp4' 
+    process_video(video_file)  
     app.run(debug=True)
 
