@@ -64,51 +64,44 @@
         let trafficChart;
 
         async function fetchData() {
-            // try {
-            //     const response = await fetch('/data');
-            //     if (!response.ok) {
-            //         throw new Error('Network response was not ok: ' + response.statusText);
-            //     }
-            //     const data = await response.json();
-            //     console.log(data);  // Log the fetched data to console for debugging
+             try {
+                 const response = await fetch('/data');
+                if (!response.ok) {
+                     throw new Error('Network response was not ok: ' + response.statusText);
+                 }
+                 const data = await response.json();
+                 console.log(data);  //log에서 data 확인
 
-            //     // 데이터가 비어 있으면 경고 메시지를 출력하고 빈 배열을 반환
-            //     if (!Array.isArray(data) || data.length === 0) {
-            //         console.warn('Fetched data is empty or not an array.');
-            //         return [];
-            //     }
+                 // 데이터가 비어 있으면 경고 메시지를 출력하고 빈 배열을 반환
+                 if (!Array.isArray(data) || data.length === 0) {
+                     console.warn('Fetched data is empty or not an array.');
+                     return [];
+                 }
 
-            //     return data;
-
-
-            // } catch (error) {
-            //     console.error('Fetch error: ', error);
-            //     return [];  // Return an empty array on error to prevent further issues
-            // }
+                return data;
 
 
-            const response = await fetch('/data');
-            const data = await response.json();
-            console.log("Fetched data: ", data);
-            return data;
+             } catch (error) {
+                 console.error('Fetch error: ', error);
+                 return [];  //error issue 나타내기
+             }
+
         }
 
         async function createChart() {
             const data = await fetchData();
             
-            // Prepare data for chart
+            // chart data불러오기
             const labels = data.map((_, index) => index + 1);  // Frames as labels
             const carCounts = data.map(item => item.detected_objects.filter(obj => obj === 'car').length);
             const busCounts = data.map(item => item.detected_objects.filter(obj => obj === 'bus').length);
             const personCounts = data.map(item => item.detected_objects.filter(obj => obj === 'person').length);
 
-            // Check if the data arrays are valid
             if (carCounts.length === 0 && busCounts.length === 0 && personCounts.length === 0) {
                 console.warn('No valid data available for charting.');
-                return;  // Early exit if no data to display
+                return;  
             }
 
-            // If the chart already exists, destroy it before creating a new one
             if (trafficChart) {
                 trafficChart.destroy();
             }
@@ -162,12 +155,12 @@
             });
         }
 
-        // Call the createChart function to initiate the chart creation
         createChart();
 
     </script>
 
 </body>
 </html>
+
 
 
