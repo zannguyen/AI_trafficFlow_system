@@ -3,112 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교통 데이터 시각화</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f7f7f7;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        .container {
-            width: 90%;
-            max-width: 1200px;
-            background-color: white;
-            padding: 20px;
-            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-        }
-        h1 {
-            text-align: center;
-            font-size: 24px;
-            margin-bottom: 20px;
-        }
-        .video-container {
-            float: left;
-            width: 45%;
-        }
-        .chart-container {
-            float: right;
-            width: 50%;
-        }
-        video {
-            width: 100%;
-            border-radius: 10px;
-        }
-        canvas {
-            width: 100%;
-            height: 400px;
-        }
-    </style>
+    <title>Traffic Video Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js 라이브러리 추가 -->
 </head>
 <body>
-
-    <div class="container">
-        <h1>교통 데이터 시각화</h1>
-        <div class="video-container">
-            <video id="trafficVideo" controls autoplay>
-                <source src="{{ url_for('static', filename='/traffic_video.mp4') }}" type="video/mp4">
-                Your browser does not support the video tag.
-            </video>
-        </div>
-        <div class="chart-container">
-            <canvas id="trafficChart"></canvas>
-        </div>
-    </div>
+    <h1>Traffic Video Analysis</h1>
+    <p>Analyzing traffic video... Data will appear once processing is complete.</p>
+    
+    <canvas id="trafficChart" width="400" height="200"></canvas> <!-- 차트가 렌더링될 캔버스 -->
 
     <script>
         let trafficChart;
 
         async function fetchData() {
-             try {
-                 const response = await fetch('/data');
+            try {
+                const response = await fetch('/data');  // 서버로부터 데이터 요청
                 if (!response.ok) {
-                     throw new Error('Network response was not ok: ' + response.statusText);
-                 }
-                 const data = await response.json();
-                 console.log(data);  //log에서 data 확인
+                    throw new Error('Network response was not ok: ' + response.statusText);
+                }
+                const data = await response.json();
+                console.log(data);  // 콘솔에 데이터 출력
 
-                 // 데이터가 비어 있으면 경고 메시지를 출력하고 빈 배열을 반환
-                 if (!Array.isArray(data) || data.length === 0) {
-                     console.warn('Fetched data is empty or not an array.');
-                     return [];
-                 }
+                // 데이터가 비어 있거나 'Processing data' 메시지일 경우
+                if (data.message) {
+                    console.warn(data.message);
+                    setTimeout(fetchData, 5000);  // 5초 후 다시 데이터 요청
+                    return [];
+                }
 
                 return data;
 
-
-             } catch (error) {
-                 console.error('Fetch error: ', error);
-                 return [];  //error issue 나타내기
-             }
-
+            } catch (error) {
+                console.error('Fetch error: ', error);
+                return [];  // 오류 발생 시 빈 배열 반환
+            }
         }
 
         async function createChart() {
             const data = await fetchData();
-            
-            // chart data불러오기
-            const labels = data.map((_, index) => index + 1);  // Frames as labels
-            const carCounts = data.map(item => item.detected_objects.filter(obj => obj === 'car').length);
-            const busCounts = data.map(item => item.detected_objects.filter(obj => obj === 'bus').length);
-            const personCounts = data.map(item => item.detected_objects.filter(obj => obj === 'person').length);
 
-            if (carCounts.length === 0 && busCounts.length === 0 && personCounts.length === 0) {
+            if (data.length === 0) {
                 console.warn('No valid data available for charting.');
                 return;  
             }
 
+            // 차트에 사용할 데이터 생성
+            const labels = data.map((_, index) => `Frame ${index + 1}`);  // 각 프레임에 번호 매김
+            const carCounts = data.map(item => item.car_count);
+            const busCounts = data.map(item => item.bus_count);
+            const personCounts = data.map(item => item.person_count);
+
+            // 기존 차트가 있으면 파괴
             if (trafficChart) {
                 trafficChart.destroy();
             }
 
             const ctx = document.getElementById('trafficChart').getContext('2d');
             trafficChart = new Chart(ctx, {
-                type: 'bar',
+                type: 'bar',  // 막대형 차트
                 data: {
                     labels: labels,
                     datasets: [
@@ -155,10 +107,9 @@
             });
         }
 
+        // 차트 생성 함수 호출
         createChart();
-
     </script>
-
 </body>
 </html>
 
