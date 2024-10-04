@@ -4,111 +4,213 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Traffic Video Analysis</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #faf7f6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: black;
+        }
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .content {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        #video-container {
+            position: relative;
+            flex: 1;
+            min-width: 300px;
+        }
+        #traffic-video, #detection-overlay {
+            width: 100%;
+            height: auto;
+            max-height: 480px;
+            object-fit: contain;
+        }
+        #detection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #chart-container {
+            flex: 1;
+            min-width: 300px;
+            height: 400px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #detection-results {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-    <h1>Traffic Video Analysis</h1>
-    <p>Analyzing traffic video... Data will appear once processing is complete.</p>
-    
-    <canvas id="trafficChart" width="400" height="200"></canvas> <!-- 차트가 렌더링될 캔버스 -->
+    <div class="container">
+        <h1>Traffic Video Analysis</h1>
+        <div class="content">
+            <div id="video-container">
+                <video id="traffic-video" controls>
+                    <source src="/static/traffic_video.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <canvas id="detection-overlay"></canvas>
+            </div>
+            <div id="chart-container">
+                <canvas id="object-chart"></canvas>
+            </div>
+        </div>
+        <div class="controls">
+            <button onclick="startDetection()">Start Detection</button>
+            <button onclick="pauseDetection()">Paulse Detection</button>
+        </div>
+        <div id="detection-results"></div>
+    </div>
 
     <script>
-        let trafficChart;
+        const socket = io();
+        const video = document.getElementById('traffic-video');
+        const canvas = document.getElementById('detection-overlay');
+        const ctx = canvas.getContext('2d');
+        let chart;
 
-        async function fetchData() {
-            try {
-                const response = await fetch('/data');  // 서버로부터 데이터 요청
-                if (!response.ok) {
-                    throw new Error('Network response was not ok: ' + response.statusText);
-                }
-                const data = await response.json();
-                console.log(data);  // 콘솔에 데이터 출력
+        const objectColors = {
+            car: 'rgba(255, 99, 132, 0.7)',
+            bus: 'rgba(54, 162, 235, 0.7)',
+            person: 'rgba(75, 192, 192, 0.7)',
+            truck: 'rgba(255, 159, 64, 0.7)',
+            motorcycle: 'rgba(153, 102, 255, 0.7)',
+            bicycle: 'rgba(255, 205, 86, 0.7)'
+        };
 
-                // 데이터가 비어 있거나 'Processing data' 메시지일 경우
-                if (data.message) {
-                    console.warn(data.message);
-                    setTimeout(fetchData, 5000);  // 5초 후 다시 데이터 요청
-                    return [];
-                }
-
-                return data;
-
-            } catch (error) {
-                console.error('Fetch error: ', error);
-                return [];  // 오류 발생 시 빈 배열 반환
-            }
+        function startDetection() {
+            socket.emit('start_detection');
+            video.play();
         }
 
-        async function createChart() {
-            const data = await fetchData();
+        function pauseDetection() {
+            socket.emit('pause_detection');
+            video.pause();
+        }
 
-            if (data.length === 0) {
-                console.warn('No valid data available for charting.');
-                return;  
-            }
-
-            // 차트에 사용할 데이터 생성
-            const labels = data.map((_, index) => `Frame ${index + 1}`);  // 각 프레임에 번호 매김
-            const carCounts = data.map(item => item.car_count);
-            const busCounts = data.map(item => item.bus_count);
-            const personCounts = data.map(item => item.person_count);
-
-            // 기존 차트가 있으면 파괴
-            if (trafficChart) {
-                trafficChart.destroy();
-            }
-
-            const ctx = document.getElementById('trafficChart').getContext('2d');
-            trafficChart = new Chart(ctx, {
-                type: 'bar',  // 막대형 차트
+        function initChart() {
+            const chartCtx = document.getElementById('object-chart').getContext('2d');
+            chart = new Chart(chartCtx, {
+                type: 'bar',
                 data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Car Count',
-                            data: carCounts,
-                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            borderWidth: 1
-                        },
-                        {
-                            label: 'Bus Count',
-                            data: busCounts,
-                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            borderWidth: 1
-                        },
-                        {
-                            label: 'Person Count',
-                            data: personCounts,
-                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            borderWidth: 1
-                        }
-                    ]
+                    labels: [],
+                    datasets: [{
+                        label: 'Object Counts',
+                        data: [],
+                        backgroundColor: []
+                    }]
                 },
                 options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
                     scales: {
                         y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Number of Objects Detected'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Frame'
-                            }
+                            beginAtZero: true
                         }
                     }
                 }
             });
         }
 
-        // 차트 생성 함수 호출
-        createChart();
+        function updateChart(objectCounts) {
+            chart.data.labels = Object.keys(objectCounts);
+            chart.data.datasets[0].data = Object.values(objectCounts);
+            chart.data.datasets[0].backgroundColor = chart.data.labels.map(label => objectColors[label] || 'rgba(201, 203, 207, 0.7)');
+            chart.update();
+        }
+
+        function resizeCanvasToDisplaySize(canvas) {
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+                return true;
+            }
+            return false;
+        }
+
+        socket.on('detection_update', function(data) {
+            const detections = data.detections;
+            resizeCanvasToDisplaySize(canvas);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const scaleX = canvas.width / video.videoWidth;
+            const scaleY = canvas.height / video.videoHeight;
+            
+            detections.forEach(detection => {
+                const [x1, y1, x2, y2] = detection.box;
+                const color = objectColors[detection.class] || 'white';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
+                
+                ctx.fillStyle = color;
+                ctx.font = '12px Arial';
+                ctx.fillText(`${detection.class} ${detection.confidence}`, x1 * scaleX, y1 * scaleY - 5);
+            });
+
+            document.getElementById('detection-results').innerHTML = 
+                `Detected objects: ${detections.map(d => d.class).join(', ')}`;
+
+            updateChart(data.object_counts);
+        });
+
+        initChart();
+
+        // Ensure the canvas is resized when the video loads
+        video.addEventListener('loadedmetadata', function() {
+            resizeCanvasToDisplaySize(canvas);
+        });
+
+        // Resize canvas when window is resized
+        window.addEventListener('resize', function() {
+            resizeCanvasToDisplaySize(canvas);
+        });
     </script>
 </body>
 </html>
