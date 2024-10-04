@@ -1,81 +1,81 @@
 from flask import Flask, render_template, jsonify
+from flask_socketio import SocketIO
 import cv2
 from ultralytics import YOLO
+import threading
+import time
+import os
+from collections import Counter
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 
-# 글로벌 변수 선언
-traffic_data = []  # 감지된 객체를 저장하는 리스트
+video_path = os.path.join('static', 'traffic_video.mp4')
+model = YOLO('yolov8n.pt')
 
-# YOLO 모델 불러오기
-def load_yolo_model():
-    return YOLO('yolov8n.pt')
+latest_detections = []
+detection_running = False
+object_counts = Counter()
 
-# Object detection function using YOLOv8
-def detect_objects(frame, model):
-    results = model(frame)
-    detected_objects = []
-
-    for result in results:
-        for obj in result.boxes:
-            class_id = int(obj.cls[0])  # Extract class ID
-            detected_objects.append(class_id)
-
-    return detected_objects
-
-# 비디오 분석 함수
-def process_video():
-    global traffic_data  # 글로벌 변수로 설정
-    cap = cv2.VideoCapture('static/traffic_video.mp4')  # 비디오 파일 불러오기
-    if not cap.isOpened():
-        print("Error: Cannot open video file.")
-        return
-
-    model = load_yolo_model()
-
-    while cap.isOpened():
+def detect_objects():
+    global latest_detections, detection_running, object_counts
+    cap = cv2.VideoCapture(video_path)
+    
+    while detection_running:
         ret, frame = cap.read()
         if not ret:
-            break
-
-        detected_objects = detect_objects(frame, model)
-
-        # 클래스별 객체 개수 세기
-        car_count = 0
-        bus_count = 0
-        person_count = 0
-
-        for class_id in detected_objects:
-            # 클래스 ID에 따라 개수 세기 (COCO 클래스 기준)
-            if class_id == 2:  # car
-                car_count += 1
-            elif class_id == 5:  # bus
-                bus_count += 1
-            elif class_id == 0:  # person
-                person_count += 1
-
-        # traffic_data에 클래스별 개수 추가
-        traffic_data.append({
-            'car_count': car_count,
-            'bus_count': bus_count,
-            'person_count': person_count
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            continue
+        
+        results = model(frame)
+        
+        detections = []
+        frame_objects = Counter()
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0]
+                class_id = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                class_name = model.names[class_id]
+                detections.append({
+                    'class': class_name,
+                    'confidence': round(conf, 2),
+                    'box': [int(x1), int(y1), int(x2), int(y2)]
+                })
+                frame_objects[class_name] += 1
+        
+        latest_detections = detections
+        object_counts.update(frame_objects)
+        socketio.emit('detection_update', {
+            'detections': detections,
+            'object_counts': dict(object_counts)
         })
-
-        print(f"Car: {car_count}, Bus: {bus_count}, Person: {person_count}")
+        
+        time.sleep(0.1)
 
     cap.release()
-
-@app.route('/data')
-def data():
-    if not traffic_data:
-        return jsonify(message="Processing data, please wait...")  # 데이터가 비어 있을 때 메시지 반환
-    return jsonify(traffic_data)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('start_detection')
+def handle_start_detection():
+    global detection_running
+    if not detection_running:
+        detection_running = True
+        threading.Thread(target=detect_objects, daemon=True).start()
+
+@socketio.on('pause_detection')
+def handle_pause_detection():
+    global detection_running
+    detection_running = False
+
 if __name__ == '__main__':
-    process_video()  # 서버 시작 전에 비디오를 백그라운드에서 처리
-    app.run(debug=True)
+    socketio.run(app, debug=True)
 
