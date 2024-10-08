@@ -9,5 +9,8 @@
 ### install flask
 ``` pip install flask ```
 
+### install socketio
+``` pip install python-socketio ```
+
 ### run
 ``` flask run ```
