@@ -78,10 +78,14 @@
         #paulse_btn{
             background-color: red;
         }
-        
         #detection-results {
             margin-top: 20px;
             text-align: center;
+        }
+        #lane-status {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 18px;
         }
     </style>
 </head>
@@ -102,9 +106,10 @@
         </div>
         <div class="controls">
             <button onclick="startDetection()">Start Detection</button>
-            <button onclick="pauseDetection()" id="paulse_btn">Paulse Detection</button>
+            <button onclick="pauseDetection()" id="paulse_btn">Pause Detection</button>
         </div>
         <div id="detection-results"></div>
+        <div id="lane-status"></div>
     </div>
 
     <script>
@@ -199,22 +204,29 @@
                 `Detected objects: ${detections.map(d => d.class).join(', ')}`;
 
             updateChart(data.object_counts);
+            
+            
+            const laneStatus = Object.entries(data.lane_occupancy)
+                .map(([lane, status]) => `${lane}: ${status}`)
+                .join(', ');
+            document.getElementById('lane-status').innerHTML = `Lane Status: ${laneStatus}`;
         });
 
         initChart();
 
-        // Ensure the canvas is resized when the video loads
+        
         video.addEventListener('loadedmetadata', function() {
             resizeCanvasToDisplaySize(canvas);
         });
 
-        // Resize canvas when window is resized
+     
         window.addEventListener('resize', function() {
             resizeCanvasToDisplaySize(canvas);
         });
     </script>
 </body>
 </html>
+
 
 
 
