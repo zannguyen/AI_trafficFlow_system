@@ -1,4 +1,4 @@
-# AI_traffic_system
+# AI_trafficFlow_system
 
 ### install Library
 ```pip install tensorflow opencv-python```
