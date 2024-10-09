@@ -10,15 +10,17 @@ from collections import Counter
 app = Flask(__name__)
 socketio = SocketIO(app)
 
+# video,model 불러오기
 video_path = os.path.join('static', 'traffic_video.mp4')
 model = YOLO('yolov8n.pt')
 
 latest_detections = []
 detection_running = False
 object_counts = Counter()
+lane_occupancy = {f'lane{i}': 'Clear' for i in range(1, 5)}  
 
 def detect_objects():
-    global latest_detections, detection_running, object_counts
+    global latest_detections, detection_running, object_counts, lane_occupancy
     cap = cv2.VideoCapture(video_path)
     
     while detection_running:
@@ -27,10 +29,13 @@ def detect_objects():
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             continue
         
+        # Object detection using YOLO v.8
         results = model(frame)
         
         detections = []
         frame_objects = Counter()
+        
+        #class 분류
         for r in results:
             boxes = r.boxes
             for box in boxes:
@@ -45,11 +50,23 @@ def detect_objects():
                 })
                 frame_objects[class_name] += 1
         
+        # Update global detections and counts
         latest_detections = detections
         object_counts.update(frame_objects)
+        
+        # 차선별 혼잡도 분석
+        for i in range(1, 5):
+            lane_objects = sum([1 for d in detections if int(d['box'][0]) // 100 == i]) 
+            if lane_objects > 8:  
+                lane_occupancy[f'lane{i}'] = 'Congested'
+            else:
+                lane_occupancy[f'lane{i}'] = 'Clear'
+        
+        # Emit the data to the frontend
         socketio.emit('detection_update', {
             'detections': detections,
-            'object_counts': dict(object_counts)
+            'object_counts': dict(object_counts),
+            'lane_occupancy': lane_occupancy
         })
         
         time.sleep(0.1)
