@@ -6,222 +6,202 @@
     <title>Traffic Video Analysis</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Roboto', sans-serif;
             margin: 0;
-            padding: 0;
-            background: #faf7f6;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            color: black;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
         }
         .container {
-            width: 95%;
             max-width: 1200px;
-            margin: 20px auto;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         h1 {
             text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+        .content-wrapper {
+            display: flex;
+            gap: 30px;
             margin-bottom: 30px;
         }
-        .content {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 20px;
-        }
         #video-container {
-            position: relative;
             flex: 1;
-            min-width: 300px;
         }
-        #traffic-video, #detection-overlay {
+        #video-container video {
             width: 100%;
-            height: auto;
-            max-height: 480px;
-            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
         }
-        #detection-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
+        .right-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
         #chart-container {
-            flex: 1;
-            min-width: 300px;
-            height: 400px;
+            margin-bottom: 20px;
+        }
+        #lane-status {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.9em;
+            margin-bottom: 20px;
         }
         .controls {
             display: flex;
             justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
+            gap: 15px;
+            margin-bottom: 20px;
         }
-        button {
-            padding: 10px 20px;
+        .controls button {
+            padding: 12px 25px;
             font-size: 16px;
             cursor: pointer;
+            border: none;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        #start-detection {
             background-color: #4CAF50;
             color: white;
-            border: none;
-            border-radius: 5px;
-            transition: background-color 0.3s;
         }
-        #paulse_btn{
-            background-color: red;
+        #start-detection:hover {
+            background-color: #45a049;
+        }
+        #pause-detection {
+            background-color: #f44336;
+            color: white;
+        }
+        #pause-detection:hover {
+            background-color: #d32f2f;
         }
         #detection-results {
-            margin-top: 20px;
-            text-align: center;
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.9em;
         }
-        #lane-status {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 18px;
+        .lane-status {
+            display: inline-block;
+            margin-right: 10px;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-weight: 500;
+            font-size: 0.8em;
+            text-transform: uppercase;
+        }
+        .lane-status.clear {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .lane-status.congested {
+            background-color: #f44336;
+            color: white;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Traffic Video Analysis</h1>
-        <div class="content">
+        <div class="content-wrapper">
             <div id="video-container">
-                <video id="traffic-video" controls>
-                    <source src="/static/traffic_video.mp4" type="video/mp4">
+                <video controls>
+                    <source src="{{ url_for('static', filename='traffic_video.mp4') }}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
-                <canvas id="detection-overlay"></canvas>
             </div>
-            <div id="chart-container">
-                <canvas id="object-chart"></canvas>
+            <div class="right-column">
+                <div id="chart-container">
+                    <canvas id="detection-chart"></canvas>
+                </div>
+                <div id="lane-status"></div>
             </div>
         </div>
         <div class="controls">
-            <button onclick="startDetection()">Start Detection</button>
-            <button onclick="pauseDetection()" id="paulse_btn">Pause Detection</button>
+            <button id="start-detection">Start Detection</button>
+            <button id="pause-detection">Pause Detection</button>
         </div>
         <div id="detection-results"></div>
-        <div id="lane-status"></div>
     </div>
 
     <script>
-        const socket = io();
-        const video = document.getElementById('traffic-video');
-        const canvas = document.getElementById('detection-overlay');
-        const ctx = canvas.getContext('2d');
-        let chart;
+        // Initialize the socket connection
+        var socket = io();
 
-        const objectColors = {
-            car: 'rgba(255, 99, 132, 0.7)',
-            bus: 'rgba(54, 162, 235, 0.7)',
-            person: 'rgba(75, 192, 192, 0.7)',
-            truck: 'rgba(255, 159, 64, 0.7)',
-            motorcycle: 'rgba(153, 102, 255, 0.7)',
-            bicycle: 'rgba(255, 205, 86, 0.7)'
-        };
-
-        function startDetection() {
-            socket.emit('start_detection');
-            video.play();
-        }
-
-        function pauseDetection() {
-            socket.emit('pause_detection');
-            video.pause();
-        }
-
-        function initChart() {
-            const chartCtx = document.getElementById('object-chart').getContext('2d');
-            chart = new Chart(chartCtx, {
-                type: 'bar',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Object Counts',
-                        data: [],
-                        backgroundColor: []
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
+        // Initialize the chart
+        var ctx = document.getElementById('detection-chart').getContext('2d');
+        var chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Object Counts',
+                    data: [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        stepSize: 1
                     }
+                },
+                animation: {
+                    duration: 0
                 }
-            });
-        }
+            }
+        });
+
+        // Handle incoming detection updates
+        socket.on('detection_update', function(data) {
+            updateChart(data.object_counts);
+            updateDetectedObjects(data.detections);
+            updateLaneStatus(data.lane_occupancy);
+        });
 
         function updateChart(objectCounts) {
             chart.data.labels = Object.keys(objectCounts);
             chart.data.datasets[0].data = Object.values(objectCounts);
-            chart.data.datasets[0].backgroundColor = chart.data.labels.map(label => objectColors[label] || 'rgba(201, 203, 207, 0.7)');
             chart.update();
         }
 
-        function resizeCanvasToDisplaySize(canvas) {
-            const width = canvas.clientWidth;
-            const height = canvas.clientHeight;
-            if (canvas.width !== width || canvas.height !== height) {
-                canvas.width = width;
-                canvas.height = height;
-                return true;
-            }
-            return false;
+        function updateDetectedObjects(detections) {
+            var detectionList = detections.map(d => d.class).join(', ');
+            document.getElementById('detection-results').innerHTML = 'Detected objects: ' + detectionList;
         }
 
-        socket.on('detection_update', function(data) {
-            const detections = data.detections;
-            resizeCanvasToDisplaySize(canvas);
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            const scaleX = canvas.width / video.videoWidth;
-            const scaleY = canvas.height / video.videoHeight;
-            
-            detections.forEach(detection => {
-                const [x1, y1, x2, y2] = detection.box;
-                const color = objectColors[detection.class] || 'white';
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-                
-                ctx.fillStyle = color;
-                ctx.font = '12px Arial';
-                ctx.fillText(`${detection.class} ${detection.confidence}`, x1 * scaleX, y1 * scaleY - 5);
-            });
+        function updateLaneStatus(laneOccupancy) {
+            var laneStatusHtml = '';
+            for (var lane in laneOccupancy) {
+                var status = laneOccupancy[lane];
+                var statusClass = status === 'Congested' ? 'congested' : 'clear';
+                laneStatusHtml += `<div class="lane-status ${statusClass}">${lane}: ${status}</div>`;
+            }
+            document.getElementById('lane-status').innerHTML = laneStatusHtml;
+        }
 
-            document.getElementById('detection-results').innerHTML = 
-                `Detected objects: ${detections.map(d => d.class).join(', ')}`;
-
-            updateChart(data.object_counts);
-            
-            
-            const laneStatus = Object.entries(data.lane_occupancy)
-                .map(([lane, status]) => `${lane}: ${status}`)
-                .join(', ');
-            document.getElementById('lane-status').innerHTML = `Lane Status: ${laneStatus}`;
+        // Handle start and pause detection
+        document.getElementById('start-detection').addEventListener('click', function() {
+            socket.emit('start_detection');
         });
 
-        initChart();
-
-        
-        video.addEventListener('loadedmetadata', function() {
-            resizeCanvasToDisplaySize(canvas);
-        });
-
-     
-        window.addEventListener('resize', function() {
-            resizeCanvasToDisplaySize(canvas);
+        document.getElementById('pause-detection').addEventListener('click', function() {
+            socket.emit('pause_detection');
         });
     </script>
 </body>
