@@ -116,7 +116,7 @@
         <h1>Traffic Video Analysis</h1>
         <div class="content-wrapper">
             <div id="video-container">
-                <video controls>
+                <video controls id="traffic-video">
                     <source src="{{ url_for('static', filename='traffic_video.mp4') }}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -172,19 +172,24 @@
             updateChart(data.object_counts);
             updateDetectedObjects(data.detections);
             updateLaneStatus(data.lane_occupancy);
+            console.log(data.detections);
         });
 
+        
+        //chart data update
         function updateChart(objectCounts) {
-            chart.data.labels = Object.keys(objectCounts);
-            chart.data.datasets[0].data = Object.values(objectCounts);
+            chart.data.labels = Object.keys(objectCounts); //data의 key값만 가져옴
+            chart.data.datasets[0].data = Object.values(objectCounts); // data의 value값 가져옴
             chart.update();
         }
 
+        //detection result값 하단에 출력하게끔(없어도 됨)
         function updateDetectedObjects(detections) {
             var detectionList = detections.map(d => d.class).join(', ');
             document.getElementById('detection-results').innerHTML = 'Detected objects: ' + detectionList;
         }
 
+        // 차선 교통흐름 상태 
         function updateLaneStatus(laneOccupancy) {
             var laneStatusHtml = '';
             for (var lane in laneOccupancy) {
@@ -195,13 +200,18 @@
             document.getElementById('lane-status').innerHTML = laneStatusHtml;
         }
 
+        
         // Handle start and pause detection
         document.getElementById('start-detection').addEventListener('click', function() {
             socket.emit('start_detection');
+            const video = document.getElementById('traffic-video');
+            video.play();  // 비디오 재생 시작
         });
 
         document.getElementById('pause-detection').addEventListener('click', function() {
             socket.emit('pause_detection');
+            const video = document.getElementById('traffic-video');
+            video.pause();  // 비디오 재생 정지
         });
     </script>
 </body>
