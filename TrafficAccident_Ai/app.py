@@ -22,87 +22,82 @@ lane_occupancy = {f'lane{i}': 'Clear' for i in range(1, 5)}
 def detect_objects():
     global latest_detections, detection_running, lane_occupancy
     cap = cv2.VideoCapture(video_path)
+    
+    conf_threshold = 0.3
+    
     while detection_running:
         ret, frame = cap.read()
         if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Loop video if needed
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             continue
-        
-        # Object detection using YOLO v8
-        results = model(frame)
+            
+        # 데이터 초기화 - 여기로 이동
         detections = []
         frame_objects = Counter()
         
-        # objects class별로 분류
+        # YOLO 모델 설정 변경
+        results = model.predict(
+            source=frame,
+            conf=conf_threshold,
+            iou=0.45,
+            max_det=50
+        )
+        
+        # 감지된 객체 처리 방식 개선
         for r in results:
-            boxes = r.boxes #감지된 결과 가져오기
+            boxes = r.boxes
             for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0] #box 모서리 좌표 가져오기
-                class_id = int(box.cls[0].item()) #class id 가져오기
-                conf = box.conf[0].item() #신뢰도 가져오기 
-                
-                if conf < 0.7:  # 신뢰도 설정
-                    continue
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                class_id = int(box.cls[0].item())
+                conf = float(box.conf[0].item())
                 
                 class_name = model.names[class_id]
-                detections.append({
-                    'class': class_name,
-                    'confidence': round(conf, 2),
-                    'box': [int(x1), int(y1), int(x2), int(y2)]
-                })
-                frame_objects[class_name] += 1 # objects count!
-        
-        # 현재 프레임에서 감지된 객체수 저장
-        object_counts = dict(frame_objects)  # JS와 호환위해 JSON data 변환
-        
-
-        # 전체 frame을 4등분하여 분석
-        frame_width = frame.shape[1]  
-        lane_width = frame_width // 4 
-        
-        # Initialize variables to calculate average object area
-        total_area = 0
-        num_objects = 0
-
-        #  lane object counts 정의
-        lane_objects = {f'lane{i}': 0 for i in range(1, 5)}  # 1에서 4까지의 차선 초기화
-
-        # Count objects in each lane and calculate their areas
-        for detection in detections:
-            if detection['class'] == 'lane':  # Only consider lane detections
-                # Calculate lane index based on x-coordinate
-                center_x = (detection['box'][0] + detection['box'][2]) / 2
-                lane_index = int(center_x // lane_width) + 1  # +1 for lane numbering (1 to 4)
                 
-                if lane_index in lane_objects:
-                    lane_objects[f'lane{lane_index}'] += 1
-                    
-                    # Calculate the area of the current object
-                    x1, y1, x2, y2 = detection['box']
-                    object_area = (x2 - x1) * (y2 - y1)
-                    total_area += object_area
-                    num_objects += 1
-
-        # Calculate average object area if there are detected objects
-        average_object_area = total_area / num_objects if num_objects > 0 else 0
-
-        # Update lane occupancy based on object counts as a percentage of lane capacity
-        for i in range(1, 5):
-            # Calculate the capacity of each lane as the number of pixels in that lane
-            lane_capacity = lane_width * frame.shape[0]  # Assuming the height represents capacity
-            occupied_area = lane_objects[f'lane{i}'] * average_object_area  # You need to define average_object_area
-            occupancy_percentage = (occupied_area / lane_capacity) * 100
-            lane_occupancy[f'lane{i}'] = 'Congested' if occupancy_percentage > 80 else 'Clear'
+                vehicle_classes = ['car', 'truck', 'bus', 'motorcycle']
+                if class_name in vehicle_classes:
+                    detections.append({
+                        'class': class_name,
+                        'confidence': round(conf, 3),
+                        'box': [int(x1), int(y1), int(x2), int(y2)]
+                    })
+                    frame_objects[class_name] += 1
         
+        # 차선 분석
+        frame_width = frame.shape[1]
+        lane_width = frame_width // 4
+        lane_objects = {f'lane{i}': 0 for i in range(1, 5)}
         
-        # Emit the data to the frontend
-        socketio.emit('detection_update', {
-            'detections': detections,
-            'object_counts': object_counts,
-            'lane_occupancy': lane_occupancy
-        })
+        for detection in detections:
+            box = detection['box']
+            center_x = (box[0] + box[2]) / 2
+            lane_index = int(center_x // lane_width) + 1
+            
+            if 1 <= lane_index <= 4:
+                lane_objects[f'lane{lane_index}'] += 1
         
-        time.sleep(0.05)  # Reduce sleep for lower latency, adjust based on FPS
+        # 차선 혼잡도 계산
+        for lane, count in lane_objects.items():
+            threshold = 3
+            lane_occupancy[lane] = 'Congested' if count >= threshold else 'Clear'
+        
+        try:
+            # 데이터 준비 및 전송
+            update_data = {
+                'detections': detections,
+                'object_counts': dict(frame_objects),
+                'lane_occupancy': lane_occupancy
+            }
+            
+            # 데이터 로깅
+            print("Sending detection update:", update_data)
+            
+            # Socket.IO 이벤트 발생
+            socketio.emit('detection_update', update_data, namespace='/')
+            
+        except Exception as e:
+            print(f"Error sending detection update: {e}")
+        
+        time.sleep(0.03)
     
     cap.release()
 
@@ -118,7 +113,7 @@ def handle_connect():
 def handle_disconnect():
     print('Client disconnected')
 
-@socketio.on('start_detection')
+@socketio.on('start-detection')
 def handle_start_detection():
     global detection_running
     if not detection_running:
@@ -126,7 +121,7 @@ def handle_start_detection():
         detection_thread = threading.Thread(target=detect_objects, daemon=True)
         detection_thread.start()
 
-@socketio.on('pause_detection')
+@socketio.on('pause-detection')
 def handle_pause_detection():
     global detection_running
     detection_running = False
