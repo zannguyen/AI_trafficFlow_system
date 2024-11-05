@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
 import cv2
 from ultralytics import YOLO
@@ -6,13 +6,25 @@ import threading
 import time
 import os
 from collections import Counter
+from pymongo import MongoClient
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
+# MongoDB URI 설정(not used)
+mongo_uri = os.getenv('MONGO_URI')
+client = MongoClient(mongo_uri)
+db = client['TrafficAccident']  # 데이터베이스 선택
+
+model = YOLO('yolov8n.pt')
+
 # Load video and model
 video_path = os.path.join('static', 'traffic_video.mp4')
-model = YOLO('yolov8n.pt')
+
+# 영상 목록에서 선택한 영상의 경로를 저장하는 함수
+def select_video_path(selected_filename):
+    global video_path 
+    video_path = os.path.join('static', selected_filename)
 
 latest_detections = []
 detection_running = False
@@ -125,6 +137,38 @@ def handle_start_detection():
 def handle_pause_detection():
     global detection_running
     detection_running = False
+
+# 영상 업로드 시 실행되는 함수
+@app.route('/upload_video', methods=['POST'])
+def upload_video():
+    if 'video' not in request.files:
+        return jsonify({"message": "No video part in the request"}), 400
+    
+    file = request.files['video']
+    
+    if file.filename == '':
+        return jsonify({"message": "No selected file"}), 400
+    
+    # 파일 이름 설정 및 저장 경로 지정
+    filename = file.filename
+    file_path = os.path.join('static', filename)
+    
+    try:
+        # 파일을 static 폴더에 저장
+        file.save(file_path)
+        return jsonify({"message": "File uploaded successfully"}), 200
+    except Exception as e:
+        return jsonify({"message": f"Failed to upload file: {e}"}), 500
+
+# 영상 목록을 불러오는 함수
+@app.route('/get_video_list')
+def get_videos():
+    try:
+        video_files = os.listdir('static')
+        video_files = [f for f in video_files if f.endswith('.mp4')]
+        return jsonify({"videos": video_files}), 200
+    except Exception as e:
+        return jsonify({"message": f"Failed to get videos: {e}"}), 500
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)

@@ -1,0 +1,7 @@
+tensorflow 
+opencv-python
+ultralytics
+Flask
+python-socketio
+Flask-PyMongo
+pymongo[srv]

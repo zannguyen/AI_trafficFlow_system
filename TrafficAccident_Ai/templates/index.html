@@ -152,6 +152,7 @@
     .video-list li:hover {
         background-color: #f5f5f5;
     }
+
     </style>
 </head>
 <body>
@@ -160,15 +161,15 @@
         <div class="content-wrapper">
             <div id="video-container">
                 <div class="video-controls">
-                    <button id="add-video">영상 추가</button>
+                    <!-- 숨겨진 파일 입력 필드 -->
+                    <input type="file" id="upload-video" accept="video/*" style="display: none;">
+                    <!-- 파일 선택 버튼 -->
+                    <button id="add-video">파일 선택</button>
+
                     <button id="show-list">목록 보기</button>
                 </div>
                 <div id="video-list" class="video-list">
-                    <ul>
-                        <li data-video="traffic_video.mp4">교통 영상 1</li>
-                        <li data-video="traffic_video2.mp4">교통 영상 2</li>
-                        <li data-video="traffic_video3.mp4">교통 영상 3</li>
-                    </ul>
+                    <ul id="video-list-ul"></ul>
                 </div>
                 <video controls id="traffic-video">
                     <source src="{{ url_for('static', filename='traffic_video.mp4') }}" type="video/mp4">
@@ -306,10 +307,10 @@
 
 
             // 비디오 목록 표시/숨기기 기능
-        document.getElementById('show-list').addEventListener('click', function() {
-            const videoList = document.getElementById('video-list');
-            videoList.classList.toggle('show');
-        });
+//        document.getElementById('show-list').addEventListener('click', function() {
+ //           const videoList = document.getElementById('video-list');
+ //           videoList.classList.toggle('show');
+  //      });
         
         // 비디오 목록에서 선택 시 비디오 변경
         document.querySelectorAll('#video-list li').forEach(item => {
@@ -324,9 +325,68 @@
         
         // 영상 추가 버튼 클릭 시 (실제 구현은 서버 측 로직 필요)
         document.getElementById('add-video').addEventListener('click', function() {
-            alert('영상 추가 기능은 서버 측 구현이 필요합니다.');
+            document.getElementById('upload-video').click();
         });
-            
+
+        // 파일 선택 시 AJAX(비동기)로 파일 업로드
+        document.getElementById('upload-video').addEventListener('change', function() {
+            const file = this.files[0]; // 선택된 파일
+        
+            if (file) {
+                const formData = new FormData();
+                formData.append('video', file);
+        
+                // 파일을 서버로 전송
+                fetch('/upload_video', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message); // 업로드 결과 메시지
+                    // 업로드 후 목록 업데이트가 필요하면 여기서 구현 가능
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            } else {
+                alert('파일을 선택하지 않았습니다.');
+            }
+        });
+
+        // 목록 보기-리스트 선택 시 비디오 목록 가져오기
+        document.getElementById('show-list').addEventListener('click', function(event) {
+            document.getElementById('video-list').classList.toggle('show');
+            console.log("show list");
+            // 비디오 목록 가져오기
+            fetch('/get_video_list')
+                .then(response => response.json())
+                .then(data => {
+                    const videoListUl = document.getElementById('video-list-ul');
+
+                    // 목록 초기화
+                    videoListUl.innerHTML = '';
+
+                    // 파일 목록 동적 추가
+                    data.videos.forEach(video => {
+                        const item = document.createElement('li');
+                        item.textContent = video;
+                        item.setAttribute('data-video', video);
+                        // 목록에서 비디오 클릭 시 동작
+                        item.addEventListener('click', function() {
+                            const videoFile = this.getAttribute('data-video');
+                            const video = document.getElementById('traffic-video');
+                            video.src = "{{ url_for('static', filename='') }}" + videoFile;
+                            video.load();
+                            document.getElementById('video-list').classList.remove('show');
+                        });
+                        videoListUl.appendChild(item);
+                    });
+                })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
         
     </script>
 </body>
