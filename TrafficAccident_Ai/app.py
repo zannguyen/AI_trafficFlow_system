@@ -16,7 +16,7 @@ mongo_uri = os.getenv('MONGO_URI')
 client = MongoClient(mongo_uri)
 db = client['TrafficAccident']  # 데이터베이스 선택
 
-model = YOLO('yolov8n.pt')
+model = YOLO("yolo11n.pt")
 
 # Load video and model
 video_path = os.path.join('static', 'traffic_video.mp4')
