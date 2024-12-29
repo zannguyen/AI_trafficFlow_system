@@ -14,3 +14,6 @@
 
 ### run
 ``` flask run ```
+
+### venv start 
+```.\.venv\Scripts\Activate.ps1```
