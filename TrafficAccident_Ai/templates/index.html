@@ -33,6 +33,13 @@
             font-weight: 700;
         }
 
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
         .content-wrapper {
             display: flex;
             gap: 30px;
@@ -178,6 +185,7 @@
 <body>
     <div class="container">
         <h1>Traffic Video Analysis</h1>
+        <h2 class="video-name">[목록 보기]를 눌러 비디오를 선택해주세요</h2>
         <div class="content-wrapper">
             <div id="video-container">
                 <div class="video-controls">
@@ -409,6 +417,8 @@
                                 const video = document.getElementById('traffic-video');
                                 video.src = "{{ url_for('static', filename='processed/') }}" + videoFile;
                                 video.load();
+
+                                document.querySelector('.video-name').textContent = videoFile;
 
                                 // Fetch and update label data
                                 const baseName = videoFile.replace('.mp4', ''); // Remove file extension
