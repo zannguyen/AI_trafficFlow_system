@@ -1,117 +1,152 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, url_for
 from flask_socketio import SocketIO
+from flask_socketio import emit
 import cv2
 from ultralytics import YOLO
 import threading
 import time
 import os
+import json
 from collections import Counter
-from pymongo import MongoClient
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# MongoDB URI 설정(not used)
-mongo_uri = os.getenv('MONGO_URI')
-client = MongoClient(mongo_uri)
-db = client['TrafficAccident']  # 데이터베이스 선택
-
-model = YOLO("yolo11n.pt")
-
 # Load video and model
-video_path = os.path.join('static', 'traffic_video.mp4')
-
-# 영상 목록에서 선택한 영상의 경로를 저장하는 함수
-def select_video_path(selected_filename):
-    global video_path 
-    video_path = os.path.join('static', selected_filename)
+video_path = os.path.join('static/processed', 'traffic_video_processed.mp4')
+model = YOLO("yolo11n.pt")
 
 latest_detections = []
 detection_running = False
 lane_occupancy = {f'lane{i}': 'Clear' for i in range(1, 5)}
 
 # Function to run object detection
-def detect_objects():
-    global latest_detections, detection_running, lane_occupancy
-    cap = cv2.VideoCapture(video_path)
-    
+# def detect_objects():
+
+# Function to initialize processing on Flask start
+def initialize_video_processing():
+    originals_path = 'static/originals'
+    processed_path = 'static/processed'
+
+    # Check if paths exist
+    if not os.path.exists(originals_path):
+        print(f"Error: Originals path '{originals_path}' does not exist.")
+        return
+    if not os.path.exists(processed_path):
+        print(f"Error: Processed path '{processed_path}' does not exist.")
+        os.makedirs(processed_path)
+
+    # Get list of .mp4 files in originals and processed folders
+    originals = [f for f in os.listdir(originals_path) if f.endswith('.mp4')]
+    processed = [f for f in os.listdir(processed_path) if f.endswith('.mp4') or f.endswith('.json')]
+
+    # Check for missing processed videos
+    for original_file in originals:
+        base_name = os.path.splitext(original_file)[0]
+        processed_video = f"{base_name}_processed.mp4"
+        label_json = f"{base_name}_label.json"
+
+        if processed_video not in processed or label_json not in processed:
+            original_path = os.path.join(originals_path, original_file)
+            processed_video_path = os.path.join(processed_path, processed_video)
+            label_json_path = os.path.join(processed_path, label_json)
+
+            print(f"Processing missing videos for: {original_file}")
+            process_and_generate_videos(original_path, processed_video_path, label_json_path)
+
+# Function to process video and generate processed and label files
+def process_and_generate_videos(original_path, processed_video_path, label_json_path, target_fps=24):
+    if not os.path.exists(original_path):
+        socketio.emit('log_message', {'message': f"Error: Video file '{original_path}' does not exist."})
+        return
+
+    cap = cv2.VideoCapture(original_path)
+    if not cap.isOpened():
+        socketio.emit('log_message', {'message': f"Error: Unable to open video file '{original_path}'."})
+        return
+
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    original_fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_interval = max(1, round(original_fps / target_fps))  # Interval to skip frames
+
+    processed_out = cv2.VideoWriter(
+        processed_video_path,
+        cv2.VideoWriter_fourcc(*'avc1'),
+        target_fps,
+        (frame_width, frame_height)
+    )
+
     conf_threshold = 0.3
-    
-    while detection_running:
+    all_detections = []
+    frame_count = 0  # Initialize frame_count to 0
+
+    while True:
         ret, frame = cap.read()
         if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            continue
-            
-        # 데이터 초기화 - 여기로 이동
+            break
+
         detections = []
         frame_objects = Counter()
-        
-        # YOLO 모델 설정 변경
-        results = model.predict(
-            source=frame,
-            conf=conf_threshold,
-            iou=0.45,
-            max_det=50
-        )
-        
-        # 감지된 객체 처리 방식 개선
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                class_id = int(box.cls[0].item())
-                conf = float(box.conf[0].item())
-                
-                class_name = model.names[class_id]
-                
-                vehicle_classes = ['car', 'truck', 'bus', 'motorcycle']
-                if class_name in vehicle_classes:
-                    detections.append({
-                        'class': class_name,
-                        'confidence': round(conf, 3),
-                        'box': [int(x1), int(y1), int(x2), int(y2)]
-                    })
-                    frame_objects[class_name] += 1
-        
-        # 차선 분석
-        frame_width = frame.shape[1]
-        lane_width = frame_width // 4
-        lane_objects = {f'lane{i}': 0 for i in range(1, 5)}
-        
-        for detection in detections:
-            box = detection['box']
-            center_x = (box[0] + box[2]) / 2
-            lane_index = int(center_x // lane_width) + 1
-            
-            if 1 <= lane_index <= 4:
-                lane_objects[f'lane{lane_index}'] += 1
-        
-        # 차선 혼잡도 계산
-        for lane, count in lane_objects.items():
-            threshold = 3
-            lane_occupancy[lane] = 'Congested' if count >= threshold else 'Clear'
-        
-        try:
-            # 데이터 준비 및 전송
-            update_data = {
-                'detections': detections,
-                'object_counts': dict(frame_objects),
-                'lane_occupancy': lane_occupancy
-            }
-            
-            # 데이터 로깅
-            print("Sending detection update:", update_data)
-            
-            # Socket.IO 이벤트 발생
-            socketio.emit('detection_update', update_data, namespace='/')
-            
-        except Exception as e:
-            print(f"Error sending detection update: {e}")
-        
-        time.sleep(0.03)
-    
+
+        # Process every `frame_interval` frame
+        if frame_count % frame_interval == 0:
+            detections = []
+
+            # YOLO 모델 설정 변경
+            try:
+                results = model.predict(
+                    source=frame,
+                    conf=conf_threshold,
+                    iou=0.45,
+                    max_det=50
+                )
+            except Exception as e:
+                print(f"Error in YOLO model prediction: {e}")
+                break
+
+            for r in results:
+                boxes = r.boxes
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    class_id = int(box.cls[0].item())
+                    conf = float(box.conf[0].item())
+
+                    class_name = model.names[class_id]
+                    vehicle_classes = ['car', 'truck', 'bus', 'motorcycle']
+                    if class_name in vehicle_classes:
+                        detections.append({
+                            'class': class_name,
+                            'confidence': round(conf, 3),
+                            'box': [int(x1), int(y1), int(x2), int(y2)]
+                        })
+                        frame_objects[class_name] += 1
+
+                        # 객체 감지된 영역 표시
+                        cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                        cv2.putText(frame, f'{class_name} {conf:.2f}', (int(x1), int(y1)-10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # Append detections to all_detections
+            all_detections.append({
+                'frame': int(cap.get(cv2.CAP_PROP_POS_FRAMES)),
+                'detections': detections
+            })
+
+            # Write processed frame
+            processed_out.write(frame)
+
+        frame_count += 1
+
     cap.release()
+    processed_out.release()
+
+    # Save detections to JSON
+    with open(label_json_path, 'w') as json_file:
+        json.dump(all_detections, json_file, indent=4)
+
+    print(f"Processed video saved to: {processed_video_path}")
+    print(f"Label data saved to: {label_json_path}")
 
 @app.route('/')
 def index():
@@ -124,19 +159,6 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     print('Client disconnected')
-
-@socketio.on('start-detection')
-def handle_start_detection():
-    global detection_running
-    if not detection_running:
-        detection_running = True
-        detection_thread = threading.Thread(target=detect_objects, daemon=True)
-        detection_thread.start()
-
-@socketio.on('pause-detection')
-def handle_pause_detection():
-    global detection_running
-    detection_running = False
 
 # 영상 업로드 시 실행되는 함수
 @app.route('/upload_video', methods=['POST'])
@@ -151,25 +173,57 @@ def upload_video():
     
     # 파일 이름 설정 및 저장 경로 지정
     filename = file.filename
-    file_path = os.path.join('static', filename)
+    original_path = os.path.join('static/originals', filename)
     
     try:
-        # 파일을 static 폴더에 저장
-        file.save(file_path)
-        return jsonify({"message": "File uploaded successfully"}), 200
+        # 파일을 static/originals 폴더에 저장
+        file.save(original_path)
+        
+        # 분석 및 처리 경로 설정
+        base_name = os.path.splitext(filename)[0]
+        processed_video_path = os.path.join('static/processed', f"{base_name}_processed.mp4")
+        label_json_path = os.path.join('static/processed', f"{base_name}_label.json")
+        
+        # 분석 및 처리 함수 호출
+        process_and_generate_videos(original_path, processed_video_path, label_json_path)
+        
+        return jsonify({
+            "message": "File uploaded and processing completed successfully",
+            "processed_video": f"/static/processed/{base_name}_processed.mp4",
+            "label_data": f"/static/processed/{base_name}_label.json"
+        }), 200
     except Exception as e:
-        return jsonify({"message": f"Failed to upload file: {e}"}), 500
+        return jsonify({"message": f"Failed to upload and process file: {e}"}), 500
 
 # 영상 목록을 불러오는 함수
 @app.route('/get_video_list')
-def get_videos():
+def get_video_list():
     try:
-        video_files = os.listdir('static')
+        video_files = os.listdir('static/processed')
         video_files = [f for f in video_files if f.endswith('.mp4')]
         return jsonify({"videos": video_files}), 200
+        # URL 생성
+        video_urls = [url_for('static', filename=f'processed/{f}') for f in video_files]
+        return jsonify({"videos": video_urls}), 200
     except Exception as e:
         return jsonify({"message": f"Failed to get videos: {e}"}), 500
 
+@app.route('/get_label_data/<filename>')
+def get_label_data(filename):
+    label_path = os.path.join('static/processed', filename)
+    if not os.path.exists(label_path):
+        return jsonify({"message": "Label file not found"}), 404
+    
+    try:
+        with open(label_path, 'r') as f:
+            label_data = json.load(f)
+        return jsonify(label_data), 200
+    except Exception as e:
+        return jsonify({"message": f"Error reading label file: {e}"}), 500
+
 if __name__ == '__main__':
     socketio.run(app, debug=True)
+    
+initialize_video_processing()
+
 
