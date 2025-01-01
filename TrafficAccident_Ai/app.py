@@ -44,7 +44,7 @@ def initialize_video_processing():
     for original_file in originals:
         base_name = os.path.splitext(original_file)[0]
         processed_video = f"{base_name}_processed.mp4"
-        label_json = f"{base_name}_label.json"
+        label_json = f"{base_name}_processed.json"
 
         if processed_video not in processed or label_json not in processed:
             original_path = os.path.join(originals_path, original_file)
@@ -182,7 +182,7 @@ def upload_video():
         # 분석 및 처리 경로 설정
         base_name = os.path.splitext(filename)[0]
         processed_video_path = os.path.join('static/processed', f"{base_name}_processed.mp4")
-        label_json_path = os.path.join('static/processed', f"{base_name}_label.json")
+        label_json_path = os.path.join('static/processed', f"{base_name}_processed.json")
         
         # 분석 및 처리 함수 호출
         process_and_generate_videos(original_path, processed_video_path, label_json_path)
@@ -190,7 +190,7 @@ def upload_video():
         return jsonify({
             "message": "File uploaded and processing completed successfully",
             "processed_video": f"/static/processed/{base_name}_processed.mp4",
-            "label_data": f"/static/processed/{base_name}_label.json"
+            "label_data": f"/static/processed/{base_name}_processed.json"
         }), 200
     except Exception as e:
         return jsonify({"message": f"Failed to upload and process file: {e}"}), 500
@@ -208,9 +208,10 @@ def get_video_list():
     except Exception as e:
         return jsonify({"message": f"Failed to get videos: {e}"}), 500
 
-@app.route('/get_label_data/<filename>')
-def get_label_data(filename):
-    label_path = os.path.join('static/processed', filename)
+@app.route('/get_label_data/<video_name>')
+def get_label_data(video_name):
+    label_path = os.path.join(f'static/processed/{video_name}.json')
+    print(label_path)
     if not os.path.exists(label_path):
         return jsonify({"message": "Label file not found"}), 404
     

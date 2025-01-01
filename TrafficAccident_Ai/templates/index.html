@@ -195,9 +195,6 @@
                     <span id="current-frame">Current Frame(video): 0</span>
                 </div>
                 <video controls id="traffic-video">
-                    <source src="{{ url_for('static', filename='processed/traffic_video_processed.mp4') }}"
-                        type="video/mp4">
-                    Your browser does not support the video tag.
                 </video>
             </div>
             <div class="right-column">
@@ -230,21 +227,30 @@
                 document.getElementById('current-frame').textContent = `Current Frame: ${currentFrame}`;
             });
 
-            // Fetch label data from server 
-            // !!변경 필요!!
-            fetch('/get_label_data/traffic_video_label.json')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Failed to fetch label data.');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    labelData = data;
-                })
-                .catch(error => {
-                    console.error('Error loading label data:', error);
-                });
+            // Fetch and update label data
+            function fetchLabelData(videoName) {
+                const labelDataPath = `/get_label_data/${videoName.replace('.mp4', '')}`;
+                fetch(labelDataPath)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch label data.');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        labelData = data;
+                        console.log('Label data loaded:', labelData);
+
+                        // Optional: Clear or update label-related UI
+                        const detectionResults = document.getElementById('detection-results');
+                        detectionResults.innerHTML = 'Label data loaded. Ready to process.';
+                    })
+                    .catch(error => {
+                        console.error('Error loading label data:', error);
+                        const detectionResults = document.getElementById('detection-results');
+                        detectionResults.innerHTML = 'Failed to load label data.';
+                    });
+            }
 
             // 차트 초기화
             function initChart() {
@@ -348,17 +354,6 @@
                 }
             });
 
-            // 비디오 목록에서 선택 시 비디오 변경
-            document.querySelectorAll('#video-list li').forEach(item => {
-                item.addEventListener('click', function () {
-                    const videoFile = this.getAttribute('data-video');
-                    const video = document.getElementById('traffic-video');
-                    video.src = "{{ url_for('static', filename='') }}" + videoFile;
-                    video.load();
-                    document.getElementById('video-list').classList.remove('show');
-                });
-            });
-
             // 영상 추가 버튼 클릭 시 (아래 upload-video 호출)
             document.getElementById('add-video').addEventListener('click', function () {
                 document.getElementById('upload-video').click();
@@ -414,6 +409,12 @@
                                 const video = document.getElementById('traffic-video');
                                 video.src = "{{ url_for('static', filename='processed/') }}" + videoFile;
                                 video.load();
+
+                                // Fetch and update label data
+                                const baseName = videoFile.replace('.mp4', ''); // Remove file extension
+                                fetchLabelData(baseName);
+
+                                // Hide the video list dropdown
                                 document.getElementById('video-list').classList.remove('show');
                             });
                             videoListUl.appendChild(item);
