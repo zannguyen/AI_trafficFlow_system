@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traffic Video Analysis</title>
+    <title>TRAFFIC VIDEO ANALYSIS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
@@ -24,6 +24,18 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        #add_video {
+            background-color: #52ff33;
+        }
+
+        #show_list {
+            background-color: #f0ff33;
+        }
+
+        #stop_btn {
+            background-color: #ff3333;
         }
 
         h1 {
@@ -47,7 +59,8 @@
         }
 
         #video-container {
-            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         #video-container video {
@@ -80,6 +93,16 @@
             gap: 15px;
             margin-bottom: 20px;
         }
+
+        .btn_controls {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+/* Error
+        /* .btn_controls > button {
+            margin-bottom: ;
+        } */
 
         .controls button {
             padding: 12px 25px;
@@ -142,11 +165,57 @@
             gap: 10px;
         }
 
-        .video-controls button {
+        .video-controls button button:nth-child(0){
             padding: 8px 15px;
             border: none;
             border-radius: 5px;
-            background-color: #2c3e50;
+            background-color: #51de45;
+            color: white;
+            cursor: pointer;
+        }
+
+        .video-controls button:nth-child(1){
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #22f171;
+            color: white;
+            cursor: pointer;
+        }
+
+
+        .video-controls button:nth-child(2){
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #cfed0a;
+            color: white;
+            cursor: pointer;
+        }
+        
+        .video-controls button:nth-child(3){
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #51de45;
+            color: white;
+            cursor: pointer;
+        }
+
+        .video-controls button button:nth-child(2){
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #51de45;
+            color: white;
+            cursor: pointer;
+        }
+
+        .video-controls button button:nth-child(3){
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #51de45;
             color: white;
             cursor: pointer;
         }
@@ -184,17 +253,20 @@
 
 <body>
     <div class="container">
-        <h1>Traffic Video Analysis</h1>
-        <h2 class="video-name">[목록 보기]를 눌러 비디오를 선택해주세요</h2>
+        <h1>TRAFFIC VIDEO ANALYSIS</h1>
         <div class="content-wrapper">
             <div id="video-container">
                 <div class="video-controls">
                     <!-- 숨겨진 파일 입력 필드 -->
                     <input type="file" id="upload-video" accept="video/*" style="display: none;">
                     <!-- 파일 선택 버튼 -->
-                    <button id="add-video">영상 업로드</button>
-
-                    <button id="show-list">목록 보기</button>
+                    
+                    <div class="btn_controls">
+                        <button id="add-video">Add video</button>
+                        <button id="show-list">Show list</button>
+                        <button id="stop_btn">stop the video</button>
+                    </div>
+                    
                 </div>
                 <div id="video-list" class="video-list">
                     <ul id="video-list-ul"></ul>
@@ -202,10 +274,11 @@
                 <div id="frame-info" style="font-size: 16px; font-weight: bold; margin-top: 10px;">
                     <span id="current-frame">Current Frame(video): 0</span>
                 </div>
-                <video controls id="traffic-video">
-                </video>
+                
             </div>
             <div class="right-column">
+                <video controls id="traffic-video">
+                </video>
                 <div id="chart-container">
                     <canvas id="detection-chart"></canvas>
                 </div>

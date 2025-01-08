@@ -150,7 +150,7 @@ def process_and_generate_videos(original_path, processed_video_path, label_json_
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('homepage.html')
 
 @socketio.on('connect')
 def handle_connect():
